@@ -4,33 +4,12 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/Albert-Ti/alice-skill/internal/logger"
 	"github.com/Albert-Ti/alice-skill/internal/models"
 	"go.uber.org/zap"
 )
-
-// функция main вызывается автоматически при запуске приложения
-func main() {
-	parseFlags()
-
-	println("flagLogLevel:", flagLogLevel)
-
-	if err := run(); err != nil {
-		panic(err)
-	}
-}
-
-// функция run будет полезна при инициализации зависимостей сервера перед запуском
-func run() error {
-	if err := logger.Initialize(flagLogLevel); err != nil {
-		return err
-	}
-
-	logger.Log.Info("Running server", zap.String("address", flagRunAddr))
-	// оборачиваем хендлер webhook в middleware с логированием
-	return http.ListenAndServe(flagRunAddr, logger.RequestLogger(webhook))
-}
 
 func webhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -74,4 +53,64 @@ func webhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Log.Debug("sending HTTP 200 response")
+}
+
+func gzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// по умолчанию устанавливаем оригинальный http.ResponseWriter как тот,
+		// который будем передавать следующей функции
+		ow := w
+
+		// проверяем, что клиент умеет получать от сервера сжатые данные в формате gzip
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		supportsGzip := strings.Contains(acceptEncoding, "gzip")
+		if supportsGzip {
+			// оборачиваем оригинальный http.ResponseWriter новым с поддержкой сжатия
+			cw := newCompressWriter(w)
+			// меняем оригинальный http.ResponseWriter на новый
+			ow = cw
+			// не забываем отправить клиенту все сжатые данные после завершения middleware
+			defer cw.Close()
+		}
+
+		// проверяем, что клиент отправил серверу сжатые данные в формате gzip
+		contentEncoding := r.Header.Get("Content-Encoding")
+		sendsGzip := strings.Contains(contentEncoding, "gzip")
+		if sendsGzip {
+			// оборачиваем тело запроса в io.Reader с поддержкой декомпрессии
+			cr, err := newCompressReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			// меняем тело запроса на новое
+			r.Body = cr
+			defer cr.Close()
+		}
+
+		// передаём управление хендлеру
+		h.ServeHTTP(ow, r)
+	}
+}
+
+// функция run будет полезна при инициализации зависимостей сервера перед запуском
+func run() error {
+	if err := logger.Initialize(flagLogLevel); err != nil {
+		return err
+	}
+
+	logger.Log.Info("Running server", zap.String("address", flagRunAddr))
+	// оборачиваем хендлер webhook в middleware с логированием
+	return http.ListenAndServe(flagRunAddr, logger.RequestLogger(gzipMiddleware(webhook)))
+}
+
+// функция main вызывается автоматически при запуске приложения
+func main() {
+	parseFlags()
+
+	println("flagLogLevel:", flagLogLevel)
+
+	if err := run(); err != nil {
+		panic(err)
+	}
 }
