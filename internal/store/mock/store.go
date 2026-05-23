@@ -80,6 +80,20 @@ func (mr *MockMessageStoreMockRecorder) ListMessages(ctx, userID interface{}) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMessages", reflect.TypeOf((*MockMessageStore)(nil).ListMessages), ctx, userID)
 }
 
+// RegisterUser mocks base method.
+func (m *MockMessageStore) RegisterUser(ctx context.Context, userID, username string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RegisterUser", ctx, userID, username)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RegisterUser indicates an expected call of RegisterUser.
+func (mr *MockMessageStoreMockRecorder) RegisterUser(ctx, userID, username interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockMessageStore)(nil).RegisterUser), ctx, userID, username)
+}
+
 // SaveMessage mocks base method.
 func (m *MockMessageStore) SaveMessage(ctx context.Context, userID string, msg store.Message) error {
 	m.ctrl.T.Helper()
